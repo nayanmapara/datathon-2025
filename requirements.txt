@@ -5,3 +5,5 @@ scikit-learn
 networkx
 folium
 geopy
+requests
+streamlit-folium

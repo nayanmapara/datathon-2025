@@ -1,122 +1,145 @@
 import streamlit as st
-import networkx as nx
+import requests
+import folium
+from streamlit_folium import st_folium
+from dotenv import load_dotenv
 import os
-import pandas as pd
-import pydeck as pdk
 
-from src.data_loader import load_cyclist_data, load_crime_data, load_collision_data
-from src.feature_engineering import preprocess_all
-from src.risk_model import build_risk_model
-from src.graph_builder import build_graph, get_nearest_node
+# --- Load API key
+load_dotenv()
+API_KEY = os.getenv("API_KEY")
 
-st.title("SafeRoute AI – MVP (All Datasets Included)")
+# --- Toronto Hotspots
+POPULAR_LOCATIONS = {
+    "Union Station": (43.645233, -79.380219),
+    "CN Tower": (43.642566, -79.387057),
+    "Toronto Eaton Centre": (43.654438, -79.380691),
+    "Royal Ontario Museum": (43.667710, -79.394777),
+    "University of Toronto": (43.662892, -79.395656),
+    "Rogers Centre": (43.641921, -79.389201),
+    "St. Lawrence Market": (43.648605, -79.371351),
+    "Yonge-Dundas Square": (43.656066, -79.380151),
+    "High Park": (43.646547, -79.463738),
+    "Scarborough Town Centre": (43.775737, -79.257765),
+    "Ontario Science Centre": (43.716122, -79.340664),
+    "Casa Loma": (43.678019, -79.409445)
+}
 
-DATA_DIR = "data"
-DEFAULT_CYCLIST = os.path.join(DATA_DIR, "cyclists_toronto.csv")
-DEFAULT_CRIME   = os.path.join(DATA_DIR, "major_crime_indicators.csv")
-DEFAULT_COLL    = os.path.join(DATA_DIR, "traffic_collisions.csv")
+# --- Session state defaults
+for key, value in {
+    "start_lat": 43.645233, "start_lon": -79.380219,
+    "end_lat": 43.642566, "end_lon": -79.387057,
+    "route_geojson": None,
+    "route_midpoint": None,
+    "route_exists": False
+}.items():
+    if key not in st.session_state:
+        st.session_state[key] = value
 
-def debug(msg, obj):
-    st.text(f"{msg}: {str(obj)}")
+# --- UI setup
+st.set_page_config(page_title="SafeRoute AI", page_icon="🚲", layout="wide")
+st.markdown("### How do you want to choose route points?")
+mode = st.radio(
+    "Select input mode:",
+    options=["By Name (dropdown)", "Manual Entry", "Pick on Map"]
+)
 
-cycle_file = st.file_uploader("Cyclists Dataset", type="csv")
-crime_file = st.file_uploader("Crime Dataset", type="csv")
-coll_file = st.file_uploader("Collisions Dataset", type="csv")
+# --- Dynamic Input
+popular_names = list(POPULAR_LOCATIONS.keys())
 
-if cycle_file is None:
-    debug("Using default cyclist file", DEFAULT_CYCLIST)
-    cycle_file = DEFAULT_CYCLIST
-if crime_file is None:
-    debug("Using default crime file", DEFAULT_CRIME)
-    crime_file = DEFAULT_CRIME
-if coll_file is None:
-    debug("Using default collision file", DEFAULT_COLL)
-    coll_file = DEFAULT_COLL
+if mode == "By Name (dropdown)":
+    col1, col2 = st.columns([1, 1])
+    start_name = col1.selectbox("Start location", popular_names, index=0)
+    end_name = col2.selectbox("End location", popular_names, index=1)
+    start_lat, start_lon = POPULAR_LOCATIONS[start_name]
+    end_lat, end_lon = POPULAR_LOCATIONS[end_name]
+elif mode == "Manual Entry":
+    col1, col2 = st.columns([1, 1])
+    start_lat = col1.number_input("Start Latitude", value=st.session_state["start_lat"], format="%.6f")
+    start_lon = col1.number_input("Start Longitude", value=st.session_state["start_lon"], format="%.6f")
+    end_lat = col2.number_input("End Latitude", value=st.session_state["end_lat"], format="%.6f")
+    end_lon = col2.number_input("End Longitude", value=st.session_state["end_lon"], format="%.6f")
+else:  # Pick on Map
+    st.write("Click anywhere on map then set as Start or End below.")
+    midpoint = [(st.session_state["start_lat"] + st.session_state["end_lat"]) / 2,
+                (st.session_state["start_lon"] + st.session_state["end_lon"]) / 2]
+    m = folium.Map(location=midpoint, zoom_start=13)
+    folium.Marker([st.session_state["start_lat"], st.session_state["start_lon"]],
+                  popup="Start", icon=folium.Icon(color="green")).add_to(m)
+    folium.Marker([st.session_state["end_lat"], st.session_state["end_lon"]],
+                  popup="End", icon=folium.Icon(color="blue")).add_to(m)
+    folium.TileLayer(
+        tiles=f"https://maps.geoapify.com/v1/tile/osm-carto/{{z}}/{{x}}/{{y}}.png?apiKey={API_KEY}",
+        attr="Geoapify",
+        overlay=False,
+        control=True,
+        max_zoom=20
+    ).add_to(m)
+    map_data = st_folium(m, width=850, height=400)
+    clicked_lat = None
+    clicked_lon = None
+    if isinstance(map_data, dict) and "last_clicked" in map_data and map_data["last_clicked"] is not None:
+        clicked_lat = map_data["last_clicked"]["lat"]
+        clicked_lon = map_data["last_clicked"]["lng"]
 
-if cycle_file and crime_file and coll_file:
-    st.success("All datasets loaded!")
+    if clicked_lat is not None and clicked_lon is not None:
+        st.write(f"Clicked: {clicked_lat:.6f}, {clicked_lon:.6f}")
+        if st.button("Set as Start Point"):
+            st.session_state["start_lat"] = clicked_lat
+            st.session_state["start_lon"] = clicked_lon
+        if st.button("Set as End Point"):
+            st.session_state["end_lat"] = clicked_lat
+            st.session_state["end_lon"] = clicked_lon
+    start_lat = st.session_state["start_lat"]
+    start_lon = st.session_state["start_lon"]
+    end_lat = st.session_state["end_lat"]
+    end_lon = st.session_state["end_lon"]
 
-    df_cyc = load_cyclist_data(cycle_file)
-    df_crime = load_crime_data(crime_file)
-    df_coll = load_collision_data(coll_file)
-    df_all = preprocess_all(df_cyc, df_crime, df_coll)
+st.write("---")
+submitted = st.button("Find Safe Route 🚦")
 
-    st.write("### Preview of combined dataset:")
-    st.dataframe(df_all.head())
+# --- Routing (store results in session_state)
+if submitted:
+    route_url = (
+        f"https://api.geoapify.com/v1/routing?"
+        f"waypoints={start_lat},{start_lon}|{end_lat},{end_lon}"
+        f"&mode=walk&apiKey={API_KEY}"
+    )
+    response = requests.get(route_url)
+    route_json = response.json()
+    if "features" in route_json and len(route_json["features"]) > 0:
+        geojson = route_json["features"][0]["geometry"]
+        midpoint = [(start_lat + end_lat) / 2, (start_lon + end_lon) / 2]
+        st.session_state["route_geojson"] = geojson
+        st.session_state["route_midpoint"] = midpoint
+        st.session_state["route_exists"] = True
+    else:
+        st.session_state["route_geojson"] = None
+        st.session_state["route_exists"] = False
 
-    # Filter to Toronto bounds (adjust if your area is different)
-    df_all = df_all[(df_all["lat"] != 0) & (df_all["lon"] != 0)]
-    df_all = df_all[(df_all["lat"] > 43.5) & (df_all["lat"] < 44.0) & 
-                    (df_all["lon"] < -79.0) & (df_all["lon"] > -80.1)]
-    debug("Filtered dataset bounds", {
-        "lat_min": df_all["lat"].min(),
-        "lat_max": df_all["lat"].max(),
-        "lon_min": df_all["lon"].min(),
-        "lon_max": df_all["lon"].max()
-    })
+# --- Map output persists until cleared
+if st.session_state["route_exists"]:
+    m = folium.Map(location=st.session_state["route_midpoint"], zoom_start=13)
+    folium.GeoJson(
+        st.session_state["route_geojson"], name="Route",
+        style_function=lambda x: {"color": "#D7263D", "weight": 7}
+    ).add_to(m)
+    folium.Marker([start_lat, start_lon], popup="Start", icon=folium.Icon(color="green")).add_to(m)
+    folium.Marker([end_lat, end_lon], popup="End", icon=folium.Icon(color="blue")).add_to(m)
+    folium.TileLayer(
+        tiles=f"https://maps.geoapify.com/v1/tile/osm-carto/{{z}}/{{x}}/{{y}}.png?apiKey={API_KEY}",
+        attr="Geoapify",
+        overlay=False,
+        control=True,
+        max_zoom=20
+    ).add_to(m)
+    st_folium(m, width=850, height=500)
+    st.success("Route visualized on map!")
 
-    model = build_risk_model(df_all)
-    st.success("Risk model trained.")
+if st.button("Clear Map 🧹"):
+    st.session_state["route_geojson"] = None
+    st.session_state["route_exists"] = False
+    st.session_state["route_midpoint"] = None
+    st.experimental_rerun()
 
-    col1, col2 = st.columns(2)
-    start_lat = col1.number_input("Start Latitude", format="%.6f")
-    start_lon = col1.number_input("Start Longitude", format="%.6f")
-    end_lat = col2.number_input("End Latitude", format="%.6f")
-    end_lon = col2.number_input("End Longitude", format="%.6f")
-
-    st.info(f"Valid Lat: {df_all['lat'].min():.6f}-{df_all['lat'].max():.6f}, Lon: {df_all['lon'].min():.6f}-{df_all['lon'].max():.6f}")
-
-    if st.button("Find Safe Route"):
-        st.text("Building graph...")
-        G = build_graph(df_all, model)
-        debug("Number of graph nodes", len(G.nodes))
-        debug("First 5 graph nodes", list(G.nodes)[:5])
-
-        start_node = get_nearest_node(G, float(start_lat), float(start_lon))
-        st.text(f"Start node used: {start_node}")
-        end_node = get_nearest_node(G, float(end_lat), float(end_lon))
-        st.text(f"End node used: {end_node}")
-
-        try:
-            st.text("Attempting path finding...")
-            path = nx.shortest_path(G, start_node, end_node, weight="weight")
-            st.success("Route generated!")
-            st.text(f"First 10 nodes in path: {path[:10]}")
-
-            # --- Visualization of Route ---
-            st.text("Plotting route on map...")
-            route_df = pd.DataFrame(path, columns=["lat", "lon"])
-            route_df["lonlat"] = route_df.apply(lambda r: [r["lon"], r["lat"]], axis=1)
-            st.pydeck_chart(
-                pdk.Deck(
-                    map_style="mapbox://styles/mapbox/light-v9",
-                    initial_view_state=pdk.ViewState(
-                        latitude=route_df["lat"].iloc[0],
-                        longitude=route_df["lon"].iloc[0],
-                        zoom=11
-                    ),
-                    layers=[
-                        pdk.Layer(
-                            "ScatterplotLayer",
-                            data=route_df,
-                            get_position="lonlat",
-                            get_color=[0, 0, 255],
-                            get_radius=100,
-                        ),
-                        pdk.Layer(
-                            "PathLayer",
-                            data=[{"path": route_df["lonlat"].tolist()}],
-                            get_path="path",
-                            get_color=[255, 0, 0],
-                            width_scale=10,
-                            width_min_pixels=3,
-                        ),
-                    ],
-                )
-            )
-        except nx.NetworkXNoPath:
-            st.error("No path could be found between your selected points.")
-            st.text(f"Start node: {start_node}, End node: {end_node}")
-            st.text(f"Grid bounds: Lat {df_all['lat'].min()} to {df_all['lat'].max()}, Lon {df_all['lon'].min()} to {df_all['lon'].max()}.")
-            st.text("First 5 available nodes: " + str(list(G.nodes)[:5]))
-            st.text("Pick coordinates close to these grid values.")
+# st.write("Choose by name, coordinates, or clicking on the map for instant Toronto routing. Powered by Geoapify + Streamlit.")
