@@ -127,9 +127,10 @@ def main():
         
         # Display start location info
         start_info = locations_df[locations_df['location_id'] == start_node].iloc[0]
+        start_idx = locations_df[locations_df['location_id'] == start_node].index[0]
         st.info(f"""
         **Lighting Score:** {start_info['lighting_score']:.2f}  
-        **Risk Score:** {risk_scores[start_node]:.2f} ({risk_scorer.get_risk_category(risk_scores[start_node])})
+        **Risk Score:** {risk_scores[start_idx]:.2f} ({risk_scorer.get_risk_category(risk_scores[start_idx])})
         """)
     
     with col2:
@@ -152,9 +153,10 @@ def main():
         
         # Display end location info
         end_info = locations_df[locations_df['location_id'] == end_node].iloc[0]
+        end_idx = locations_df[locations_df['location_id'] == end_node].index[0]
         st.info(f"""
         **Lighting Score:** {end_info['lighting_score']:.2f}  
-        **Risk Score:** {risk_scores[end_node]:.2f} ({risk_scorer.get_risk_category(risk_scores[end_node])})
+        **Risk Score:** {risk_scores[end_idx]:.2f} ({risk_scorer.get_risk_category(risk_scores[end_idx])})
         """)
     
     # Find routes button
