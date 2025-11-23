@@ -9,9 +9,9 @@ import numpy as np
 from datetime import datetime
 
 # Import custom modules
-from data_loader import load_data, prepare_location_features
+from data_loader import prepare_location_features
 from risk_scorer import RiskScorer
-from graph_builder import build_graph, find_nearest_node, get_graph_stats
+from graph_builder import build_graph, get_graph_stats
 from route_finder import RouteFinder
 from map_generator import create_route_comparison_map
 
