@@ -1,0 +1,39 @@
+### OccurrenceDate
+The exact date and time when the traffic collision occurred.  
+Used to analyze temporal patterns and determine collision trends over time.
+
+### Month
+The month extracted from the occurrence date.  
+Useful for seasonal trend analysis (winter vs. summer collision rates).
+
+### Day_of_Week
+Indicates which day the collision happened (Monday–Sunday).  
+Helps identify weekday vs. weekend risk patterns.
+
+### Year
+The calendar year of the collision event.  
+Allows long‑term trend analysis and year‑over‑year comparisons.
+
+### Hour
+The hour (0–23) during which the collision occurred.  
+Critical for identifying high‑risk time periods, especially night hours.
+
+### Neighbourhood
+The Toronto neighbourhood where the collision took place.  
+Enables geographic risk mapping and neighbourhood‑level safety insights.
+
+### Fatalities
+Number of deaths resulting from the collision.  
+Used to measure severe accident hotspots and impact severity scoring.
+
+### Injury_Collisions
+Number of collisions that resulted in injuries.  
+Indicates locations with frequent harmful incidents.
+
+### FTR_Collisions
+"Fail to Remain" (hit‑and‑run) collision count.  
+Used to identify unsafe areas prone to non‑reporting or fleeing drivers.
+
+### PD_Collisions
+Property‑Damage‑Only collision count.  
+Helps measure collision frequency even when injuries are not involved.
