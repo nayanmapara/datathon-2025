@@ -1,11 +1,11 @@
 from sklearn.cluster import KMeans
-from sklearn.linear_model import LogisticRegression
+import numpy as np
 
-def build_risk_models(crime_df):
-    km = KMeans(n_clusters=6, random_state=42)
-    km.fit(crime_df[["lat", "lon"]])
+def build_risk_model(df):
+    km = KMeans(n_clusters=5, random_state=42)
+    km.fit(df[["lat", "lon"]])
+    return km
 
-    lr = LogisticRegression()
-    lr.fit(crime_df[["hour"]], crime_df["severity"])
 
-    return km, lr
+def predict_point_risk(model, lat, lon):
+    return int(model.predict([[lat, lon]])[0])
